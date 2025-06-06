@@ -7,7 +7,7 @@
       "dest": "/index.js",
       "methods": ["POST", "OPTIONS"],
       "headers": {
-        "Access-Control-Allow-Origin": "http://localhost:3000,https://notepad-three-woad.vercel.app/login",
+        "Access-Control-Allow-Origin": "https://notepad-three-woad.vercel.app",
         "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
         "Access-Control-Allow-Credentials": "true",
