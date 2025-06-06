@@ -1,5 +1,4 @@
-const { Note, User } = require('../models');
-const { Op } = require('sequelize');
+const prisma = require('../lib/prisma');
 
 // Create a new note
 const createNote = async (req, res) => {
@@ -13,10 +12,19 @@ const createNote = async (req, res) => {
       });
     }
 
-    const note = await Note.create({
-      title,
-      content,
-      user_id: userId
+    // Validate title length
+    if (title.length > 255) {
+      return res.status(400).json({
+        error: 'Title must be 255 characters or less'
+      });
+    }
+
+    const note = await prisma.note.create({
+      data: {
+        title,
+        content,
+        userId
+      }
     });
 
     res.status(201).json({
@@ -25,17 +33,6 @@ const createNote = async (req, res) => {
     });
   } catch (error) {
     console.error('Create note error:', error);
-    
-    if (error.name === 'SequelizeValidationError') {
-      return res.status(400).json({
-        error: 'Validation error',
-        details: error.errors.map(err => ({
-          field: err.path,
-          message: err.message
-        }))
-      });
-    }
-
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -46,33 +43,45 @@ const getAllNotes = async (req, res) => {
     const userId = req.user.userId;
     const { page = 1, limit = 10, search } = req.query;
 
-    const offset = (page - 1) * limit;
-    const whereClause = { user_id: userId };
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
 
-    // Add search functionality
-    if (search) {
-      whereClause[Op.or] = [
-        { title: { [Op.like]: `%${search}%` } },
-        { content: { [Op.like]: `%${search}%` } }
-      ];
-    }
+    // Build where clause for search
+    const whereClause = {
+      userId,
+      ...(search && {
+        OR: [
+          { title: { contains: search, mode: 'insensitive' } },
+          { content: { contains: search, mode: 'insensitive' } }
+        ]
+      })
+    };
 
-    const { count, rows: notes } = await Note.findAndCountAll({
-      where: whereClause,
-      order: [['updated_at', 'DESC']],
-      limit: parseInt(limit),
-      offset: parseInt(offset)
-    });
+    // Get notes with pagination
+    const [notes, totalCount] = await Promise.all([
+      prisma.note.findMany({
+        where: whereClause,
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limitNum
+      }),
+      prisma.note.count({
+        where: whereClause
+      })
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limitNum);
 
     res.json({
       message: 'Notes retrieved successfully',
       notes,
       pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(count / limit),
-        totalNotes: count,
-        hasNextPage: page * limit < count,
-        hasPrevPage: page > 1
+        currentPage: pageNum,
+        totalPages,
+        totalNotes: totalCount,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1
       }
     });
   } catch (error) {
@@ -84,13 +93,17 @@ const getAllNotes = async (req, res) => {
 // Get a specific note by ID
 const getNoteById = async (req, res) => {
   try {
-    const noteId = req.params.id;
+    const noteId = parseInt(req.params.id);
     const userId = req.user.userId;
 
-    const note = await Note.findOne({
+    if (isNaN(noteId)) {
+      return res.status(400).json({ error: 'Invalid note ID' });
+    }
+
+    const note = await prisma.note.findFirst({
       where: {
         id: noteId,
-        user_id: userId
+        userId
       }
     });
 
@@ -111,9 +124,13 @@ const getNoteById = async (req, res) => {
 // Update a note
 const updateNote = async (req, res) => {
   try {
-    const noteId = req.params.id;
+    const noteId = parseInt(req.params.id);
     const userId = req.user.userId;
     const { title, content } = req.body;
+
+    if (isNaN(noteId)) {
+      return res.status(400).json({ error: 'Invalid note ID' });
+    }
 
     if (!title || !content) {
       return res.status(400).json({ 
@@ -121,22 +138,32 @@ const updateNote = async (req, res) => {
       });
     }
 
-    // Find the note first
-    const note = await Note.findOne({
+    // Validate title length
+    if (title.length > 255) {
+      return res.status(400).json({
+        error: 'Title must be 255 characters or less'
+      });
+    }
+
+    // Check if note exists and belongs to user
+    const existingNote = await prisma.note.findFirst({
       where: {
         id: noteId,
-        user_id: userId
+        userId
       }
     });
 
-    if (!note) {
+    if (!existingNote) {
       return res.status(404).json({ error: 'Note not found' });
     }
 
     // Update the note
-    await note.update({
-      title,
-      content
+    const note = await prisma.note.update({
+      where: { id: noteId },
+      data: {
+        title,
+        content
+      }
     });
 
     res.json({
@@ -145,17 +172,6 @@ const updateNote = async (req, res) => {
     });
   } catch (error) {
     console.error('Update note error:', error);
-    
-    if (error.name === 'SequelizeValidationError') {
-      return res.status(400).json({
-        error: 'Validation error',
-        details: error.errors.map(err => ({
-          field: err.path,
-          message: err.message
-        }))
-      });
-    }
-
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -163,20 +179,29 @@ const updateNote = async (req, res) => {
 // Delete a note
 const deleteNote = async (req, res) => {
   try {
-    const noteId = req.params.id;
+    const noteId = parseInt(req.params.id);
     const userId = req.user.userId;
 
-    // Find and delete the note
-    const deletedRows = await Note.destroy({
+    if (isNaN(noteId)) {
+      return res.status(400).json({ error: 'Invalid note ID' });
+    }
+
+    // Check if note exists and belongs to user
+    const existingNote = await prisma.note.findFirst({
       where: {
         id: noteId,
-        user_id: userId
+        userId
       }
     });
 
-    if (deletedRows === 0) {
+    if (!existingNote) {
       return res.status(404).json({ error: 'Note not found' });
     }
+
+    // Delete the note
+    await prisma.note.delete({
+      where: { id: noteId }
+    });
 
     res.json({
       message: 'Note deleted successfully'

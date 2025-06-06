@@ -1,8 +1,22 @@
 const jwt = require('jsonwebtoken');
-const { User } = require('../models');
+const bcrypt = require('bcryptjs');
+const prisma = require('../lib/prisma');
 
-const { Op } = require('sequelize');
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+
+// Helper functions
+const hashPassword = async (password) => {
+  return await bcrypt.hash(password, 10);
+};
+
+const validatePassword = async (password, hashedPassword) => {
+  return await bcrypt.compare(password, hashedPassword);
+};
+
+const getSafeUserData = (user) => {
+  const { password, ...userData } = user;
+  return userData;
+};
 
 // Register new user
 const register = async (req, res) => {
@@ -16,14 +30,29 @@ const register = async (req, res) => {
       });
     }
 
-    // Check if user already exists - FIXED: Use Op.or instead of $or
-    const existingUser = await User.findOne({
+    if (password.length < 6) {
+      return res.status(400).json({
+        error: 'Password must be at least 6 characters long'
+      });
+    }
+
+    if (username.length < 3 || username.length > 50) {
+      return res.status(400).json({
+        error: 'Username must be between 3 and 50 characters'
+      });
+    }
+
+    const hashedPassword = await hashPassword(password);
+
+    // Check if user exists using Prisma ORM
+    const existingUser = await prisma.user.findFirst({
       where: {
-        [Op.or]: [
+        OR: [
           { username },
           { email }
         ]
-      }
+      },
+      select: { id: true }
     });
 
     if (existingUser) {
@@ -32,31 +61,30 @@ const register = async (req, res) => {
       });
     }
 
-    // Create new user (password will be hashed by the model hook)
-    const user = await User.create({
-      username,
-      email,
-      password
+    // Create new user using Prisma ORM
+    const newUser = await prisma.user.create({
+      data: {
+        username,
+        email,
+        password: hashedPassword
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        createdAt: true
+      }
     });
 
     res.status(201).json({
       message: 'User registered successfully',
-      user: user.getSafeData()
+      user: newUser
     });
   } catch (error) {
     console.error('Registration error:', error);
 
-    if (error.name === 'SequelizeValidationError') {
-      return res.status(400).json({
-        error: 'Validation error',
-        details: error.errors.map(err => ({
-          field: err.path,
-          message: err.message
-        }))
-      });
-    }
-
-    if (error.name === 'SequelizeUniqueConstraintError') {
+    // Handle Prisma unique constraint errors
+    if (error.code === 'P2002') {
       return res.status(400).json({
         error: 'Username or email already exists'
       });
@@ -65,6 +93,7 @@ const register = async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
 // Login user
 const login = async (req, res) => {
   try {
@@ -76,43 +105,69 @@ const login = async (req, res) => {
       });
     }
 
-    // Find user by username
-    const user = await User.findOne({
-      where: { username }
+    // Use findFirst instead of findUnique as workaround
+    const user = await prisma.user.findFirst({
+      where: { username },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        password: true,
+        createdAt: true
+      }
     });
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Verify password
-    const isPasswordValid = await user.validatePassword(password);
+    const isPasswordValid = await validatePassword(password, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, username: user.username },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
 
-    res.json({
+    return res.json({
       message: 'Login successful',
       token,
-      user: user.getSafeData()
+      user: getSafeUserData(user)
     });
+
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    
+    // Special handling for Supabase connection issues
+    if (error.message.includes('prepared statement') || error.code === 'P1001') {
+      console.error('⚠️ Supabase connection issue detected');
+      return res.status(503).json({ 
+        error: 'Service temporarily unavailable',
+        message: 'Please try again in a moment'
+      });
+    }
+    
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message })
+    });
   }
 };
-
 // Get current user info
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.userId);
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        createdAt: true
+      }
+    });
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -120,7 +175,7 @@ const getProfile = async (req, res) => {
 
     res.json({
       message: 'Profile retrieved successfully',
-      user: user.getSafeData()
+      user
     });
   } catch (error) {
     console.error('Get profile error:', error);
