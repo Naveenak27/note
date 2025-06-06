@@ -1,10 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-// Add this at the very top of your main server file
-process.env.PRISMA_QUERY_ENGINE_LIBRARY = './node_modules/.prisma/client/libquery_engine-debian-openssl-3.0.x.so.node';
 
-// Your existing code...
+// Set Prisma engine path
+process.env.PRISMA_QUERY_ENGINE_LIBRARY = './node_modules/.prisma/client/libquery_engine-debian-openssl-3.0.x.so.node';
 
 const prisma = require('./lib/prisma');
 const routes = require('./routes');
@@ -12,41 +11,56 @@ const routes = require('./routes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// CORS configuration - allow multiple origins
+// Enhanced CORS configuration
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://shiny-baklava-46049e.netlify.app',
-  // Add your Vercel frontend domain here
-  process.env.FRONTEND_URL,
-  // Add any other domains you need
+  'https://notes-frontend.vercel.app',
+  'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app',
+  process.env.FRONTEND_URL
 ].filter(Boolean);
 
-// Single CORS middleware configuration
-// Update your CORS middleware to this:
-app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'https://notes-frontend.vercel.app', // Replace with your actual frontend URL
-    'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app'
-  ],
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 200 // Legacy browsers
+};
 
-// Add this before your routes
-app.options('*', cors()); // Enable preflight for all routes
-// Log requests for debugging
+// Apply CORS middleware
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Preflight for all routes
+
+// Request logging middleware
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - Origin: ${req.get('Origin')}`);
   next();
 });
 
+// Body parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use('/', routes);
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy',
+    message: 'Notes App API',
+    version: '1.0.0'
+  });
+});
 
 // 404 handler
 app.use((req, res) => {
@@ -56,44 +70,45 @@ app.use((req, res) => {
 // Error handling middleware
 app.use((error, req, res, next) => {
   console.error('Unhandled error:', error);
-  res.status(500).json({ error: 'Internal server error' });
+  
+  if (error.message === 'Not allowed by CORS') {
+    return res.status(403).json({ error: 'CORS policy blocked this request' });
+  }
+  
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: error.message 
+  });
 });
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('Received SIGINT. Gracefully shutting down...');
+// Graceful shutdown handlers
+const shutdown = async () => {
+  console.log('Shutting down gracefully...');
   await prisma.$disconnect();
   process.exit(0);
-});
+};
 
-process.on('SIGTERM', async () => {
-  console.log('Received SIGTERM. Gracefully shutting down...');
-  await prisma.$disconnect();
-  process.exit(0);
-});
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
-// Initialize database connection and start server
+// Database connection and server startup
 async function startServer() {
   try {
-    // Test database connection
     await prisma.$connect();
-    console.log('Database connection established successfully');
+    console.log('Database connected successfully');
     
-    // Start server
     app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-      console.log(`Health check: http://localhost:${PORT}/health`);
-      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`Server running on port ${PORT}`);
       console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
     });
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('Server startup failed:', error);
     await prisma.$disconnect();
     process.exit(1);
   }
 }
 
-// For Vercel serverless functions
+// Vercel serverless compatibility
 if (process.env.VERCEL) {
   module.exports = app;
 } else {
