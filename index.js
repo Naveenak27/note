@@ -15,30 +15,44 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   'http://localhost:3000',
   'https://notes-frontend.vercel.app',
-  'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app',"https://notepad-three-woad.vercel.app/",
+  'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app',
+  'https://notepad-three-woad.vercel.app',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
 const corsOptions = {
   origin: function (origin, callback) {
+    console.log('CORS Origin check:', origin);
+    
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.log('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   optionsSuccessStatus: 200 // Legacy browsers
 };
 
-// Apply CORS middleware
+// Apply CORS middleware FIRST
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Preflight for all routes
+
+// Handle preflight requests explicitly
+app.options('*', (req, res) => {
+  console.log('Preflight request from:', req.get('Origin'));
+  res.header('Access-Control-Allow-Origin', req.get('Origin'));
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400');
+  res.status(200).end();
+});
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -58,7 +72,8 @@ app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'healthy',
     message: 'Notes App API',
-    version: '1.0.0'
+    version: '1.0.0',
+    allowedOrigins: allowedOrigins
   });
 });
 

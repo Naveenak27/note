@@ -1,19 +1,21 @@
 {
   "version": 2,
-  "builds": [{"src": "index.js", "use": "@vercel/node"}],
+  "builds": [
+    {
+      "src": "index.js",
+      "use": "@vercel/node"
+    }
+  ],
   "routes": [
     {
-      "src": "/auth/register",
+      "src": "/(.*)",
       "dest": "/index.js",
-      "methods": ["POST", "OPTIONS"],
-      "headers": {
-        "Access-Control-Allow-Origin": "https://notepad-three-woad.vercel.app",
-        "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Allow-Credentials": "true",
-        "Access-Control-Max-Age": "86400"
-      }
-    },
-    {"src": "/(.*)", "dest": "/index.js"}
-  ]
+      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    }
+  ],
+  "functions": {
+    "index.js": {
+      "maxDuration": 10
+    }
+  }
 }
