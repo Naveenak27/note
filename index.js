@@ -3,30 +3,51 @@ const cors = require('cors');
 const app = express();
 
 // Critical CORS configuration
-app.use(cors({
-  origin: 'http://localhost:3000',
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'https://notes-frontend.vercel.app',
+    /\.vercel\.app$/ // Allow all Vercel deployment URLs
+  ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
-  optionsSuccessStatus: 200
-}));
+  optionsSuccessStatus: 204
+};
 
-// Explicit OPTIONS handler for /auth/register
-app.options('/auth/register', (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+app.use(cors(corsOptions));
+
+// Explicit preflight handler
+app.options('*', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.status(200).end();
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.status(204).end();
 });
 
-// Your auth route
+// Body parsers
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Auth routes
 app.post('/auth/register', (req, res) => {
-  res.json({ success: true });
+  console.log('Register request received');
+  res.json({ success: true, message: 'Registration successful' });
 });
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Handle favicon requests
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
+// Error handling
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 module.exports = app;
