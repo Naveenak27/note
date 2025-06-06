@@ -2,179 +2,130 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+// Set Prisma engine path
+process.env.PRISMA_QUERY_ENGINE_LIBRARY = './node_modules/.prisma/client/libquery_engine-debian-openssl-3.0.x.so.node';
+
+const prisma = require('./lib/prisma');
+const routes = require('./routes');
+
 const app = express();
+const PORT = process.env.PORT || 5000;
 
-// CRITICAL: Set headers BEFORE any other middleware
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  
-  // List of allowed origins
-  const allowedOrigins = [
-    'http://localhost:3000',
-    'https://notepad-three-woad.vercel.app',
-    'https://notes-frontend.vercel.app',
-    'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app',
-    process.env.FRONTEND_URL
-  ].filter(Boolean);
+// Enhanced CORS configuration
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://notes-frontend.vercel.app',
+  'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app',
+  'https://notepad-three-woad.vercel.app',
+  process.env.FRONTEND_URL
+].filter(Boolean);
 
-  // Check if origin is allowed
-  if (!origin || allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  }
-  
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Max-Age', '86400');
-  
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    console.log('Preflight request from:', origin);
-    return res.status(200).end();
-  }
-  
-  console.log(`${req.method} ${req.url} from origin: ${origin}`);
-  next();
-});
-
-// CORS middleware as backup
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'https://notepad-three-woad.vercel.app',
-      'https://notes-frontend.vercel.app',
-      'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app',
-      process.env.FRONTEND_URL
-    ].filter(Boolean);
+    console.log('CORS Origin check:', origin);
     
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
-      callback(null, true); // Allow all origins in production for now
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  optionsSuccessStatus: 200 // Legacy browsers
 };
 
+// Apply CORS middleware FIRST
 app.use(cors(corsOptions));
 
-// Body parsers
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Health check endpoint
-app.get('/', (req, res) => {
-  res.status(200).json({ 
-    status: 'healthy',
-    message: 'Notes App API',
-    version: '1.0.0',
-    timestamp: new Date().toISOString()
-  });
+// Handle preflight requests explicitly
+app.options('*', (req, res) => {
+  console.log('Preflight request from:', req.get('Origin'));
+  res.header('Access-Control-Allow-Origin', req.get('Origin'));
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400');
+  res.status(200).end();
 });
 
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path} - Origin: ${req.get('Origin')}`);
+  next();
+});
+
+// Body parsers
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Routes
+app.use('/', routes);
+
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'healthy',
     message: 'Notes App API',
     version: '1.0.0',
-    timestamp: new Date().toISOString()
+    allowedOrigins: allowedOrigins
   });
 });
 
-// Test endpoint for CORS
-app.get('/test-cors', (req, res) => {
-  res.json({ 
-    message: 'CORS test successful',
-    origin: req.headers.origin,
-    method: req.method,
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.post('/test-cors', (req, res) => {
-  res.json({ 
-    message: 'POST CORS test successful',
-    origin: req.headers.origin,
-    body: req.body,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Initialize dependencies lazily
-let prisma;
-let routes;
-
-async function initializeDependencies() {
-  if (!prisma) {
-    try {
-      // Set Prisma engine path for Vercel
-      if (process.env.VERCEL) {
-        process.env.PRISMA_QUERY_ENGINE_LIBRARY = './node_modules/.prisma/client/libquery_engine-rhel-openssl-1.0.x.so.node';
-      }
-      
-      prisma = require('./lib/prisma');
-      routes = require('./routes');
-      
-      // Test database connection
-      await prisma.$connect();
-      console.log('Database connected successfully');
-    } catch (error) {
-      console.error('Failed to initialize dependencies:', error);
-      // Don't throw error, let the app continue without DB for now
-    }
-  }
-  return { prisma, routes };
-}
-
-// Routes middleware
-app.use(async (req, res, next) => {
-  try {
-    if (!routes && req.path !== '/' && req.path !== '/health' && req.path !== '/test-cors') {
-      await initializeDependencies();
-    }
-    next();
-  } catch (error) {
-    console.error('Initialization error:', error);
-    next(); // Continue anyway
-  }
-});
-
-// Apply routes
-app.use('/', (req, res, next) => {
-  if (routes) {
-    routes(req, res, next);
-  } else {
-    next();
-  }
-});
-
-// Catch-all for undefined routes
+// 404 handler
 app.use((req, res) => {
-  res.status(404).json({ 
-    error: 'Route not found',
-    path: req.path,
-    method: req.method
-  });
+  res.status(404).json({ error: 'Route not found' });
 });
 
-// Error handling
+// Error handling middleware
 app.use((error, req, res, next) => {
   console.error('Unhandled error:', error);
+  
+  if (error.message === 'Not allowed by CORS') {
+    return res.status(403).json({ error: 'CORS policy blocked this request' });
+  }
+  
   res.status(500).json({ 
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    message: error.message 
   });
 });
 
-// For local development
-if (!process.env.VERCEL) {
-  const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+// Graceful shutdown handlers
+const shutdown = async () => {
+  console.log('Shutting down gracefully...');
+  await prisma.$disconnect();
+  process.exit(0);
+};
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
+// Database connection and server startup
+async function startServer() {
+  try {
+    await prisma.$connect();
+    console.log('Database connected successfully');
+    
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+    });
+  } catch (error) {
+    console.error('Server startup failed:', error);
+    await prisma.$disconnect();
+    process.exit(1);
+  }
 }
 
-module.exports = app;
+// Vercel serverless compatibility
+if (process.env.VERCEL) {
+  module.exports = app;
+} else {
+  startServer();
+}
