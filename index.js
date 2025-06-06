@@ -7,7 +7,7 @@ const corsOptions = {
   origin: [
     'http://localhost:3000',
     'https://notes-frontend.vercel.app',
-    'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app'
+    'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app',"https://notepad-three-woad.vercel.app/"
   ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
