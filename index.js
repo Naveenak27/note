@@ -2,26 +2,27 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 
-// Critical CORS configuration
+// Enhanced CORS configuration
 const corsOptions = {
   origin: [
     'http://localhost:3000',
     'https://notes-frontend.vercel.app',
-    /\.vercel\.app$/ // Allow all Vercel deployment URLs
+    'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app'
   ],
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true,
   optionsSuccessStatus: 204
 };
 
+// Apply CORS middleware
 app.use(cors(corsOptions));
 
-// Explicit preflight handler
-app.options('*', (req, res) => {
+// Special preflight handler for /auth/register
+app.options('/auth/register', (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.status(204).end();
 });
@@ -30,23 +31,20 @@ app.options('*', (req, res) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Auth routes
+// Registration endpoint
 app.post('/auth/register', (req, res) => {
-  console.log('Register request received');
-  res.json({ success: true, message: 'Registration successful' });
+  console.log('Registration attempt:', req.body);
+  
+  // Your registration logic here
+  res.json({ 
+    success: true,
+    message: 'Registration successful' 
+  });
 });
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Handle favicon requests
-app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Error handling
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
+  console.error('Server error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
 

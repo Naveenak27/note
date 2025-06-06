@@ -10,7 +10,13 @@
     {
       "src": "/auth/(.*)",
       "dest": "/index.js",
-      "methods": ["GET", "POST", "OPTIONS"]
+      "methods": ["POST", "OPTIONS"],
+      "headers": {
+        "Access-Control-Allow-Origin": "http://localhost:3000",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Credentials": "true"
+      }
     },
     {
       "src": "/(.*)",
@@ -18,10 +24,23 @@
       "methods": ["GET", "OPTIONS"]
     }
   ],
-  "rewrites": [
+  "headers": [
     {
-      "source": "/auth/:path*",
-      "destination": "/index.js"
+      "source": "/auth/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "http://localhost:3000"
+        },
+        {
+          "key": "Access-Control-Expose-Headers",
+          "value": "Content-Length, X-JSON"
+        },
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        }
+      ]
     }
   ]
 }
