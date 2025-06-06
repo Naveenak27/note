@@ -22,22 +22,20 @@ const allowedOrigins = [
 ].filter(Boolean);
 
 // Single CORS middleware configuration
+// Update your CORS middleware to this:
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: [
+    'http://localhost:3000',
+    'https://notes-frontend.vercel.app', // Replace with your actual frontend URL
+    'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
+// Add this before your routes
+app.options('*', cors()); // Enable preflight for all routes
 // Log requests for debugging
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - Origin: ${req.get('Origin')}`);
