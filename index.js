@@ -13,9 +13,6 @@ const PORT = process.env.PORT || 5000;
 
 // Enhanced CORS configuration
 const allowedOrigins = [
-  'http://localhost:3000',
-  'https://notes-frontend.vercel.app',
-  'https://notes-n60jx6mrq-ramkrish82033-3083s-projects.vercel.app',
   'https://notepad-three-woad.vercel.app',
   process.env.FRONTEND_URL
 ].filter(Boolean);

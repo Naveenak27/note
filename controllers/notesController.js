@@ -43,6 +43,21 @@ const getAllNotes = async (req, res) => {
     const userId = req.user.userId;
     const { page = 1, limit = 10, search } = req.query;
 
+    const priority = req.query.priority;
+    if (priority) {
+      const notes = await prisma.note.findMany({
+        where: {
+          userId,
+          priority
+        },
+        orderBy: { updatedAt: 'desc' }
+      });
+      return res.json({
+        message: 'Notes retrieved successfully',
+        notes
+      });
+    }
+
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
